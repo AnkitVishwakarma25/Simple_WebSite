@@ -1,8 +1,12 @@
 
 
 import User from "../models/User.js";
+import jwt from "jsonwebtoken"
+import config from "../config/configenv.js";
 
-import { generateAccessToken } from "../utils/token.js";
+import { generateAccessToken, generateRefreshToken } from "../utils/token.js";
+
+import redisClient from "../config/redis.js";
 
 
 // register codes 
@@ -112,15 +116,48 @@ export const login = async (req, res) => {
 
         const isMatch = await user.comparePassword(password);
 
+
+
         if (!isMatch) {
             return res.status(401).json({
                 message: "Invalid credentials",
             });
         }
 
-        // 4️⃣ Login success (token comes in next step)
+        const accessToken = await generateAccessToken(user)
+        const refreshToken = await generateRefreshToken(user)
+
+        console.log(accessToken)
+        console.log(refreshToken)
+
+        //save refresh token inside redis 
+
+        await redisClient.set(`refresh_${user._id}`,
+            refreshToken, {
+            EX: 7 * 24 * 60 * 60, //7 days 
+        })
+
+        // set refresh token inside cookies 
+
+        res.cookie("refreshToken", refreshToken, {
+
+            httpOnly: true,
+            secure: false,
+            samesite: "strict",
+            maxAge: 7 * 24 * 60 * 60 * 1000,
+
+        });
+
+
+
+
+
+
+
+        // 4️⃣ Login success 
         res.status(200).json({
             message: "Login successful",
+            accessToken,
             user: {
                 id: user._id,
                 username: user.username,
@@ -139,3 +176,29 @@ export const login = async (req, res) => {
 
 }
 
+
+
+//logout codes
+
+export const logout = async (req, res) => {
+
+    try {
+        const token = req.cookies.refreshToken;
+
+        if (token) {
+            const decoded = jwt.verify(token, config.JWT_REFRESH_SECRET)
+            await redisClient.del(`refresh_${decoded.id}`)
+        } else {
+            return res.json({ message: "Invalid Tokens" })
+        }
+
+        res.clearCookie("refreshToken");
+        res.json({ message: "Logout successfuly" })
+
+    } catch (error) {
+
+        return res.status(500).json({ message: " Something went wrong" })
+
+    }
+
+}

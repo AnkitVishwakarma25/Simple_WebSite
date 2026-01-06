@@ -11,15 +11,16 @@ export const refreshAccessToken = async (req, res) => {
     try {
 
         const token = req.cookies.refreshToken;
+        const sessionId = req.cookies.sessionId
 
-        if (!token) {
+        if (!token || !sessionId) {
 
             return res.status(401).json({ message: "Refresh token missing" });
         }
 
         const decoded = jwt.verify(token, config.JWT_REFRESH_SECRET);
 
-        const storedToken = await redisClient.get(`refresh_${decoded.id}`);
+        const storedToken = await redisClient.get(`refresh_${decoded.id}:${sessionId}`);
 
         if (!storedToken || storedToken !== token) {
 

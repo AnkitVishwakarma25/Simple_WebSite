@@ -3,6 +3,7 @@
 import User from "../models/User.js";
 import jwt from "jsonwebtoken"
 import config from "../config/configenv.js";
+import { v4 as uuidv4 } from "uuid"
 
 import { generateAccessToken, generateRefreshToken } from "../utils/token.js";
 
@@ -124,6 +125,7 @@ export const login = async (req, res) => {
             });
         }
 
+        const sessionId = uuidv4();
         const accessToken = await generateAccessToken(user)
         const refreshToken = await generateRefreshToken(user)
 
@@ -132,12 +134,12 @@ export const login = async (req, res) => {
 
         //save refresh token inside redis 
 
-        await redisClient.set(`refresh_${user._id}`,
+        await redisClient.set(`refresh_${user._id}:${sessionId}`,
             refreshToken, {
             EX: 7 * 24 * 60 * 60, //7 days 
         })
 
-        // set refresh token inside cookies 
+        // send refresh token inside cookies 
 
         res.cookie("refreshToken", refreshToken, {
 
@@ -148,7 +150,13 @@ export const login = async (req, res) => {
 
         });
 
+        //send sessionId 
 
+        res.cookie("sessionId", sessionId, {
+            httpOnly: true,
+            sameSite: "strict",
+            maxAge: 7 * 24 * 60 * 60 * 1000,
+        })
 
 
 
@@ -158,6 +166,7 @@ export const login = async (req, res) => {
         res.status(200).json({
             message: "Login successful",
             accessToken,
+            sessionId,
             user: {
                 id: user._id,
                 username: user.username,
@@ -184,16 +193,18 @@ export const logout = async (req, res) => {
 
     try {
         const token = req.cookies.refreshToken;
+        const sessionId = req.cookies.sessionId;
 
-        if (token) {
+        if (token && sessionId) {
             const decoded = jwt.verify(token, config.JWT_REFRESH_SECRET)
-            await redisClient.del(`refresh_${decoded.id}`)
+            await redisClient.del(`refresh_${decoded.id}:${sessionId}`)
         } else {
             return res.json({ message: "Invalid Tokens" })
         }
 
         res.clearCookie("refreshToken");
-        res.json({ message: "Logout successfuly" })
+        res.clearCookie("sessionId")
+        res.json({ message: "Logout from this device successfuly" })
 
     } catch (error) {
 
@@ -201,4 +212,33 @@ export const logout = async (req, res) => {
 
     }
 
+}
+
+// logout form all devices
+
+export const logoutAlldevice = async (req, res) => {
+
+    try {
+        const userId = req.user.id;
+
+        //find all sessions in redis
+
+        const keys = await redisClient.keys(`refresh_${userId}:*`);
+
+        if (keys.length > 0) {
+            await redisClient.del(keys);
+        }
+
+
+        res.clearCookie("refreshToken");
+        res.clearCookie("sessionId");
+
+        res.json({ message: "Logged out from all devices" });
+    } catch (error) {
+
+        res.status(500).json({
+            message: "Internal Server Error!"
+        })
+
+    }
 }

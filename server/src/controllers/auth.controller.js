@@ -129,13 +129,21 @@ export const login = async (req, res) => {
         const accessToken = await generateAccessToken(user)
         const refreshToken = await generateRefreshToken(user)
 
-        console.log(accessToken)
-        console.log(refreshToken)
+        // console.log(accessToken)
+        // console.log(refreshToken)
+
+
+        const sessionData = {
+            refreshToken,
+            loginAt: new Date().toISOString(),
+            ip: req.ip,
+            userAgent: req.headers["user-agent"] || "unknown",
+        }
 
         //save refresh token inside redis 
 
         await redisClient.set(`refresh_${user._id}:${sessionId}`,
-            refreshToken, {
+            JSON.stringify(sessionData), {
             EX: 7 * 24 * 60 * 60, //7 days 
         })
 

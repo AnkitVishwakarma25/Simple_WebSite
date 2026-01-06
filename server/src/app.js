@@ -38,7 +38,7 @@ app.get("/", (req, res) => {
 
 app.use("/api/auth", authroutes);
 
-app.use("/api", protectedRoutes);
+app.use("/api/protected", protectedRoutes);
 
 
 export default app;

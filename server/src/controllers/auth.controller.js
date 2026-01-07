@@ -1,6 +1,7 @@
 
 
 import User from "../models/User.js";
+import AuthSecurity from "../models/AuthSecurity.js";
 import jwt from "jsonwebtoken"
 import config from "../config/configenv.js";
 import { v4 as uuidv4 } from "uuid"
@@ -112,6 +113,17 @@ export const login = async (req, res) => {
             });
         }
 
+        let security = await AuthSecurity.findOne({ userId: user._id });
+
+
+        if (!security) {
+            security = await AuthSecurity.create({ userId: user._id });
+        }
+
+        if (security.isLocked()) {
+            return res.status(423).json({ message: "Account locked" });
+        }
+
         // compare password 
 
 
@@ -120,6 +132,9 @@ export const login = async (req, res) => {
 
 
         if (!isMatch) {
+
+            await security.incrementAttempts();  //increament login attempts in authsecurity
+
             return res.status(401).json({
                 message: "Invalid credentials",
             });
@@ -182,6 +197,9 @@ export const login = async (req, res) => {
                 role: user.role,
             },
         });
+
+        await security.resetAttempts();
+
 
     } catch (error) {
 

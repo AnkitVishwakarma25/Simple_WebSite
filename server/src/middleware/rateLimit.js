@@ -6,7 +6,7 @@ import redisClient from "../config/redis.js";
 export const loginRateLimiter = rateLimit({
 
     windowMs: 15 * 60 * 1000,   // 15m
-    max: 10, //attempts
+    max: 30, //attempts
     standardHeaders: true,
     legacyHeaders: false,
     store: new RedisStore({

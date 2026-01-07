@@ -121,7 +121,14 @@ export const login = async (req, res) => {
         }
 
         if (security.isLocked()) {
-            return res.status(423).json({ message: "Account locked" });
+
+            const unlockTime = security.lockUntil;
+            return res.status(423).json({
+
+                message: "Your account is temporarily locked due to multiple failed login attempts.",
+                locked: true,
+                unlockAt: unlockTime,
+            });
         }
 
         // compare password 

@@ -40,7 +40,7 @@ export const refreshAccessToken = async (req, res) => {
         }
 
         // 6️⃣ Generate new access token
-        const newAccessToken = generateAccessToken({ _id: decoded.id });
+        const newAccessToken = await generateAccessToken({ _id: decoded.id });
 
         res.status(200).json({
             message: "New access token generated",

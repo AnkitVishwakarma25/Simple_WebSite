@@ -8,6 +8,8 @@ const requiredEnv = [
     "JWT_ACCESS_SECRET",
     "JWT_REFRESH_SECRET",
     "REDIS_URL",
+    "EMAIL_USER",
+    "EMAIL_PASS"
 ];
 
 requiredEnv.forEach((key) => {
@@ -23,6 +25,9 @@ const config = {
     JWT_REFRESH_SECRET: process.env.JWT_REFRESH_SECRET,
     REDIS_URL: process.env.REDIS_URL,
     NODE_ENV: process.env.NODE_ENV || "development",
+    EMAIL_PASS: process.env.EMAIL_PASS,
+    EMAIL_USER: process.env.EMAIL_USER,
+
 };
 
 

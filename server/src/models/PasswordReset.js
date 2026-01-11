@@ -28,7 +28,16 @@ const passwordResetSchema = new mongoose.Schema(
         },
         resendAfter: {
             type: Date,
-        }
+        },
+        resendCount: {
+            type: Number,
+            default: 0,
+        },
+
+        resendDate: {
+            type: String, // YYYY-MM-DD
+        },
+
 
 
 

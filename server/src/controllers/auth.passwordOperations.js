@@ -9,59 +9,74 @@ import { sendOtpEmail } from "../utils/email.js";
 import redisClient from "../config/redis.js";
 
 
+
+
 export const forgetPassword = async (req, res) => {
+    const RESEND_COOLDOWN = 60 * 1000; // 60 seconds
+    const MAX_DAILY_RESENDS = 10;
 
     const { email } = req.body;
-
     const now = Date.now();
-    const existing = await PasswordReset.findOne({ email });
+    const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
 
+    let record = await PasswordReset.findOne({ email });
 
-    if (existing && existing.resendAfter && existing.resendAfter > now) {
+    // Reset daily counter if day changed
+    if (record && record.resendDate !== today) {
+        record.resendDate = today;
+        record.resendCount = 0;
+        await record.save();
+    }
 
+    // Daily limit check
+    if (record && record.resendCount >= MAX_DAILY_RESENDS) {
         return res.status(429).json({
-            message: "Please wait before requesting another OTP",
-            resendAfter: existing.resendAfter,
+            message: "Maximum OTP requests reached for today. Try again tomorrow.",
+            retryAfter: "tomorrow",
         });
     }
 
-    const user = await User.findOne({ email });
-
-    if (!user) {
-
-        return res.status(400).json({
-            message: "User not exists!"
-        })
+    //  Cooldown check
+    if (record && record.resendAfter && record.resendAfter > now) {
+        return res.status(429).json({
+            message: "Please wait before requesting another OTP",
+            resendAfter: record.resendAfter,
+        });
     }
 
-
-
+    // Generate OTP
     const otp = generateOtp();
 
-    await PasswordReset.findOneAndUpdate(
+    // Create / update OTP record
+    record = await PasswordReset.findOneAndUpdate(
         { email },
         {
             otp,
             attempts: 0,
             lockedUntil: undefined,
-            resendAfter: new Date(now + 60 * 1000), // ⏳ 60 sec
-            expiresAt: new Date(now + 10 * 60 * 1000),
+            resendAfter: new Date(now + RESEND_COOLDOWN),
+            resendDate: today,
+            $inc: { resendCount: 1 },
+            expiresAt: new Date(now + 10 * 60 * 1000), // 10 min
         },
-        { upsert: true }
+        { upsert: true, new: true }
     );
 
-    const subject = "Email Verification"
+    //  DO NOT leak user existence
+    const user = await User.findOne({ email });
+    if (user) {
+        const subject = "Password Reset OTP";
+        await sendOtpEmail(email, otp, subject);
+    }
 
-    await sendOtpEmail(email, otp, subject);
-
+    //  Always same response
     res.json({
-        message: "OTP sent successfully",
-        resendAfter: new Date(now + 60 * 1000),
+        message: "If the email exists, OTP has been sent",
+        resendAfter: record.resendAfter,
+        remainingToday: MAX_DAILY_RESENDS - record.resendCount,
     });
+};
 
-
-
-}
 
 
 export const verifyOtp = async (req, res) => {

@@ -28,12 +28,13 @@ export const forgetPassword = async (req, res) => {
         { email },
         {
             otp,
+            attempts: 0,
+            lockedUntil: undefined,
             expiresAt: new Date(Date.now() + 10 * 60 * 1000),
-
         },
         { upsert: true }
-
     );
+
 
     const subject = "Email Verification"
 
@@ -48,24 +49,77 @@ export const forgetPassword = async (req, res) => {
 
 export const verifyOtp = async (req, res) => {
 
+    const MAX_OTP_ATTEMPTS = 5;
+    const OTP_LOCK_TIME = 10 * 60 * 1000; // 10 minutes
+
+
     const { email, otp } = req.body;
 
 
-    const record = await PasswordReset.findOne({ email, otp })
+    const record = await PasswordReset.findOne({ email });
 
-    if (!record || record.expiresAt < Date.now()) {
+    if (!record) {
 
         return res.status(400).json({
             verified: false,
-            message: "Invalid or expired OTP",
+            message: "OTP expired or invalid",
         });
     }
 
+    if (record.lockUntil && record.lockUntil > Date.now()) {
+
+        return res.status(429).json({
+            verified: false,
+            message: "Too many OTP attempts. Try again later.",
+            lockedUntil: record.lockUntil,
+        });
+    }
+
+    //wrong otp
+
+    if (record.otp !== otp) {
+
+        record.attempts += 1;
+
+        //  Lock OTP after max attempts
+
+        if (record.attempts >= MAX_OTP_ATTEMPTS) {
+            record.lockUntil = new Date(Date.now() + OTP_LOCK_TIME);
+        }
+
+        await record.save();
+
+        return res.status(400).json({
+            verified: false,
+            message: "Invalid OTP",
+            remainingAttempts: Math.max(
+                0,
+                MAX_OTP_ATTEMPTS - record.attempts
+            ),
+        });
+
+
+    }
+
+    record.attempts = 0;
+    record.lockUntil = undefined;
+
+    await record.save();
+
     res.json({
         verified: true,
-        message: "OTP verified",
+        message: "OTP verified successfully",
     });
+
+    record.otp = undefined;
+
+
 }
+
+
+
+
+
 
 
 export const resetPassword = async (req, res) => {

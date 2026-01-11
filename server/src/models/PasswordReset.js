@@ -17,6 +17,17 @@ const passwordResetSchema = new mongoose.Schema(
             type: Date,
             required: true,
         },
+        attempts: {
+
+            type: Number,
+            default: 0,
+        },
+
+        lockUntil: {
+            type: Date,
+        }
+
+
     },
     { timestamps: true }
 );

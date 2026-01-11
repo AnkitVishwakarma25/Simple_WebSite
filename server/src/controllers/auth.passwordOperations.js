@@ -13,6 +13,18 @@ export const forgetPassword = async (req, res) => {
 
     const { email } = req.body;
 
+    const now = Date.now();
+    const existing = await PasswordReset.findOne({ email });
+
+
+    if (existing && existing.resendAfter && existing.resendAfter > now) {
+
+        return res.status(429).json({
+            message: "Please wait before requesting another OTP",
+            resendAfter: existing.resendAfter,
+        });
+    }
+
     const user = await User.findOne({ email });
 
     if (!user) {
@@ -22,6 +34,8 @@ export const forgetPassword = async (req, res) => {
         })
     }
 
+
+
     const otp = generateOtp();
 
     await PasswordReset.findOneAndUpdate(
@@ -30,17 +44,20 @@ export const forgetPassword = async (req, res) => {
             otp,
             attempts: 0,
             lockedUntil: undefined,
-            expiresAt: new Date(Date.now() + 10 * 60 * 1000),
+            resendAfter: new Date(now + 60 * 1000), // ⏳ 60 sec
+            expiresAt: new Date(now + 10 * 60 * 1000),
         },
         { upsert: true }
     );
 
-
     const subject = "Email Verification"
 
     await sendOtpEmail(email, otp, subject);
-    res.json({ message: "OTP sent to email" });
 
+    res.json({
+        message: "OTP sent successfully",
+        resendAfter: new Date(now + 60 * 1000),
+    });
 
 
 
@@ -111,7 +128,6 @@ export const verifyOtp = async (req, res) => {
         message: "OTP verified successfully",
     });
 
-    record.otp = undefined;
 
 
 }

@@ -25,7 +25,11 @@ const passwordResetSchema = new mongoose.Schema(
 
         lockUntil: {
             type: Date,
+        },
+        resendAfter: {
+            type: Date,
         }
+
 
 
     },

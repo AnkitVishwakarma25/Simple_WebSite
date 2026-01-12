@@ -10,76 +10,212 @@ import { generateAccessToken, generateRefreshToken } from "../utils/token.js";
 
 import redisClient from "../config/redis.js";
 
+import EmailVerification from "../models/EmailVerification.js";
+import { generateOtp } from "../utils/otp.js";
+import { sendOtpEmail } from "../utils/email.js";
+
 
 // register codes 
 
 export const register = async (req, res) => {
-
     try {
+        const RESEND_COOLDOWN = 60 * 1000; // 60 sec
+        const MAX_DAILY_RESENDS = 10;
 
-        const { username, email, password } = req.body;
-
-        // check all field are there 
-
-        if (!username || !email || !password) {
-
+        const { email } = req.body;
+        if (!email) {
             return res.status(400).json({
-                message: "All field Required !"
-
-            });
-        };
-
-        // check user already not exist
-
-        const existingUser = await User.findOne({
-            $or: [{ email }, { username }],
-        });
-
-        if (existingUser) {
-
-            return res.status(409).json({
-                message: "User already exists",
+                message: "Email required",
             });
         }
 
-        // Create user (password hashing happens in model)
+        const now = Date.now();
+        const today = new Date().toISOString().slice(0, 10);
 
-        const user = await User.create({
-            username,
-            email,
-            password,
+        // 🔍 Find user (if exists)
+        let user = await User.findOne({ email });
+
+        // 🚫 If already verified → block re-register
+        if (user && user.isEmailVerified) {
+            return res.status(400).json({
+                message: "Email already registered. Please login.",
+            });
+        }
+
+        // 🆕 Create user if not exists
+        if (!user) {
+            user = await User.create({
+                email,
+                isEmailVerified: false,
+                isProfileCompleted: false,
+            });
+        }
+
+        // 🔐 Handle email verification OTP record
+        let record = await EmailVerification.findOne({
+            userId: user._id,
         });
 
+        // 🔁 Reset daily resend count if date changed
+        if (record && record.resendDate !== today) {
+            record.resendDate = today;
+            record.resendCount = 0;
+            await record.save();
+        }
 
-        // sending a safe response 
+        // ⛔ Daily resend limit
+        if (record && record.resendCount >= MAX_DAILY_RESENDS) {
+            return res.status(429).json({
+                message:
+                    "Maximum verification attempts reached for today. Try again tomorrow.",
+                retryAfter: "tomorrow",
+            });
+        }
 
+        // ⏳ Cooldown check
+        if (record && record.resendAfter && record.resendAfter > now) {
+            return res.status(429).json({
+                message: "Please wait before requesting another OTP",
+                resendAfter: record.resendAfter,
+            });
+        }
 
-        res.status(201).json({
+        // 🔢 Generate OTP
+        const otp = generateOtp();
 
-            message: "user registered successfully",
+        // 📝 Create / update verification record
+        record = await EmailVerification.findOneAndUpdate(
+            { userId: user._id },
+            {
+                otp,
+                resendAfter: new Date(now + RESEND_COOLDOWN),
+                resendDate: today,
+                $inc: { resendCount: 1 },
+                expiresAt: new Date(now + 10 * 60 * 1000),
+            },
+            { upsert: true, new: true }
+        );
 
-            user: {
-                id: user._id,
-                username: user.username,
-                email: user.email,
-                role: user.role,
-                createdAt: user.createdAt,
-            }
-        })
+        // 📧 Send email
+        await sendOtpEmail(email, otp, "Verify your email");
 
-
-
-
-
+        res.status(200).json({
+            message: "OTP sent to email",
+            resendAfter: record.resendAfter,
+            remainingToday: MAX_DAILY_RESENDS - record.resendCount,
+        });
     } catch (error) {
         res.status(500).json({
             message: "Registration failed",
             error: error.message,
         });
     }
+};
+
+
+export const varifyEmail = async (req, res) => {
+    try {
+
+        const { email, otp } = req.body;
+
+        const user = await User.findOne({ email });
+
+        if (!user) {
+            return res.status(400).json({ message: "Invalid Request" });
+        }
+
+        const record = await EmailVerification.findOne({ userId: user._id });
+
+        if (!record || record.otp !== otp || record.expiresAt < Date.now()) {
+            return res.status(400).json({ message: "Invalid or expired OTP" });
+        }
+
+        user.isEmailVerified = true;
+        await user.save();
+
+        await EmailVerification.deleteOne({ userId: user._id });
+
+        res.json({
+            message: "Email verified",
+            next: "SETUP_PROFILE", // 🔥 frontend signal
+        });
+    } catch (error) {
+
+        console.log(error.message);
+
+
+        res.status(500).json({ message: "Internal Server Error" })
+
+    }
 
 
 }
+
+
+export const checkUsername = async (req, res) => {
+
+    try {
+        const { username } = req.query;
+
+        if (!username || username.length < 4) {
+
+            return res.json({ available: false });
+        }
+
+        const exists = await User.findOne({ username });
+
+
+        res.json({
+
+            available: !exists,
+        })
+    } catch (error) {
+
+        res.status(500).json({ message: "Something Wrong!" })
+
+    }
+
+}
+
+export const completeProfile = async (req, res) => {
+
+    const { email, username, password } = req.body;
+
+    const user = await User.findOne({ email });
+
+    if (!user || !user.isEmailVerified) {
+        return res.status(403).json({
+            message: "Email not verified",
+        });
+    }
+
+    if (user.isProfileCompleted) {
+        return res.status(400).json({
+            message: "Profile already completed",
+        });
+    }
+
+    const usernameExists = await User.exists({ username });
+
+    if (usernameExists) {
+        return res.status(409).json({
+            message: "Username already taken",
+        });
+    }
+
+    user.username = username;
+    user.password = password; // hashed via pre-save
+    user.isProfileCompleted = true;
+    await user.save();
+
+    res.json({
+        message: "Profile completed successfully",
+    });
+
+}
+
+
+
 
 // login codes
 
@@ -110,6 +246,12 @@ export const login = async (req, res) => {
         if (!user) {
             return res.status(401).json({
                 message: "Invalid credentials",
+            });
+        }
+
+        if (!user.isProfileCompleted) {
+            return res.status(403).json({
+                message: "Please complete your profile",
             });
         }
 

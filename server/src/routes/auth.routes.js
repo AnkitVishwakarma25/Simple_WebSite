@@ -2,7 +2,7 @@
 
 import express from "express"
 
-import { register, login, logout } from "../controllers/auth.controller.js"
+import { register, login, logout, varifyEmail, checkUsername, completeProfile } from "../controllers/auth.controller.js"
 import { refreshAccessToken } from "../controllers/auth.refreshcontroller.js";
 import { loginRateLimiter } from "../middleware/rateLimit.js";
 import { forgetPassword, resetPassword, verifyOtp } from "../controllers/auth.passwordOperations.js";
@@ -10,6 +10,9 @@ import { forgetPassword, resetPassword, verifyOtp } from "../controllers/auth.pa
 const router = express.Router();
 
 router.post("/register", register);
+router.post("/varifyemail", varifyEmail);
+router.get("/checkusername", checkUsername);
+router.post("/completeprofile", completeProfile);
 
 router.post("/login", loginRateLimiter, login);
 

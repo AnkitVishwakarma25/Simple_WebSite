@@ -8,11 +8,11 @@ const userSchema = new mongoose.Schema(
 
         username: {
             type: String,
-            required: true,
             unique: true,
             trim: true,
             minlength: 3,
             maxlength: 20,
+            sparse: true,
         },
 
         email: {
@@ -26,10 +26,20 @@ const userSchema = new mongoose.Schema(
 
         password: {
             type: String,
-            required: true,
+
             minlength: 8,
             select: false, // IMPORTANT
         },
+        isProfileCompleted: {
+            type: Boolean,
+            default: false,
+        },
+        isEmailVerified: {
+            type: Boolean,
+
+            default: false,
+        }
+        ,
 
         isActive: {
             type: Boolean,

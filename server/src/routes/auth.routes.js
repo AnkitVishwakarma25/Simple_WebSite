@@ -6,6 +6,8 @@ import { register, login, logout, varifyEmail, checkUsername, completeProfile } 
 import { refreshAccessToken } from "../controllers/auth.refreshcontroller.js";
 import { loginRateLimiter } from "../middleware/rateLimit.js";
 import { forgetPassword, resetPassword, verifyOtp } from "../controllers/auth.passwordOperations.js";
+import { get } from "mongoose";
+import { usernameSuggestions } from "../controllers/userNameSuggest.js";
 
 const router = express.Router();
 
@@ -25,5 +27,7 @@ router.post('/logout', logout)
 router.post("/forgot-password", forgetPassword);
 router.post("/verify-otp", verifyOtp);
 router.post("/reset-password", resetPassword);
+
+router.get("/username-suggestions", usernameSuggestions)
 
 export default router;
